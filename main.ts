@@ -1,60 +1,45 @@
-// Fortune Cookie for the Liquidated Trader — make.fun entry program.
-//
-// This program is the whole entry. It loads the one-line fortune
-// stored beside it in fortune.txt and writes that line, unchanged, to
-// /output/entry.txt, where the sealed gate scorer reads it.
-//
-// The fortune lives in fortune.txt so the text the judge sees is exactly
-// the text reviewed in this repository. Nothing is generated at run
-// time: no model call, no randomness, no clock. Every run writes the
-// same bytes, so the replay matches the live run exactly.
-//
-// The joke in one sentence: a wise trader once lost everything too —
-// and the sting is that he did not vanish into legend, he ended up
-// selling the very cookies. The fortune voice carries the laugh: an
-// oracular opening, a shared loss, and a punchline that lands on the
-// cookie in the trader's own hand. Rueful, warm, never cruel.
-
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-// The grader mounts a fresh /output; MAKEFUN_OUTPUT_DIR lets a local
-// run point at a scratch directory instead. It is only a path.
-const OUTPUT_DIR = process.env.MAKEFUN_OUTPUT_DIR ?? "/output";
-const OUTPUT_FILE = join(OUTPUT_DIR, "entry.txt");
+// Resolve everything from this module's own location, never from the
+// working directory, so `node main.ts` behaves the same from anywhere.
+const here = dirname(fileURLToPath(import.meta.url));
+const fortunePath = join(here, "fortune.txt");
+const outPath = "/output/entry.txt";
 
-// Resolve the fortune file from this module's own URL, never from the
-// working directory, so the program works wherever the grader runs it.
-const FORTUNE_PATH = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "fortune.txt",
-);
+function fail(message: string): never {
+  console.error(`error: ${message}`);
+  process.exit(1);
+}
 
-const fortune = readFileSync(FORTUNE_PATH, "utf8").replace(/\r?\n$/, "");
+const raw = readFileSync(fortunePath, "utf8");
+const fortune = raw.trim();
 
-// Self-check before finishing: the gate wants UTF-8 text of 1-160
-// characters, not only whitespace, on a single line of at most 20 words.
+// A fortune is one non-blank line, 1-160 characters, at most 20 words.
+// Validation runs on the trimmed text (the line itself), while the file
+// is written byte-for-byte from the raw input so the output stays an
+// exact copy of fortune.txt, trailing newline included.
+if (fortune.length === 0) fail("fortune.txt is empty or blank.");
 if (fortune.length < 1 || fortune.length > 160) {
-  throw new Error(`fortune must be 1-160 characters, got ${fortune.length}`);
+  fail(`fortune must be 1-160 characters, got ${fortune.length}.`);
 }
-if (fortune.trim().length === 0 || fortune.includes("\n")) {
-  throw new Error("fortune must be one non-blank line");
+if (fortune.includes("\n")) fail("fortune must be a single line.");
+// Reject stray blank lines: the raw input may end with at most one
+// trailing newline and must not contain an empty line anywhere.
+if (raw.endsWith("\n\n") || raw.includes("\n\n")) {
+  fail("fortune.txt must not contain a blank line.");
 }
-if (fortune !== fortune.trim()) {
-  throw new Error("fortune must not start or end with whitespace");
-}
-const wordCount = fortune.split(/\s+/).length;
-if (wordCount > 20) {
-  throw new Error(`fortune must be at most 20 words, got ${wordCount}`);
+const words = fortune.split(/\s+/).filter(Boolean);
+if (words.length > 20) {
+  fail(`fortune must be at most 20 words, got ${words.length}.`);
 }
 
-mkdirSync(OUTPUT_DIR, { recursive: true });
-writeFileSync(OUTPUT_FILE, fortune, "utf8");
+mkdirSync("/output", { recursive: true });
+writeFileSync(outPath, raw, "utf8");
 
-// Read back and confirm the file holds exactly what was written.
-const written = readFileSync(OUTPUT_FILE, "utf8");
-if (written !== fortune) {
-  throw new Error("read-back mismatch: entry.txt is not the fortune");
-}
-console.log(`wrote ${fortune.length} characters (${wordCount} words) to ${OUTPUT_FILE}`);
+// Read-back must be byte-identical to what was written.
+const back = readFileSync(outPath, "utf8");
+if (back !== raw) fail("read-back mismatch: entry.txt differs from fortune.txt.");
+
+console.log(`wrote ${fortune.length} chars (${words.length} words) to ${outPath}`);
